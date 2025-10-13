@@ -15,12 +15,16 @@ const PiiDetectionSchema = z.object({
 export type PiiItem = z.infer<typeof PiiItemSchema>;
 export type PiiDetection = z.infer<typeof PiiDetectionSchema>;
 
-const GROQ_MODEL = groq('llama-3.1-8b-instant');
+// Use a Groq model that supports structured outputs
+const GROQ_MODEL = groq('openai/gpt-oss-20b');
 
 export async function detectPII(
   text: string,
   ctx: AgentContext
 ): Promise<PiiItem[]> {
+  // Skip detection on empty/whitespace-only text
+  if (!text || !text.trim()) return [];
+
   try {
     const result = await generateObject({
       model: GROQ_MODEL,

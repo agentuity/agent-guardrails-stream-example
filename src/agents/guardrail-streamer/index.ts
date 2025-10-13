@@ -5,10 +5,9 @@ import { detectPII } from './pii-detection';
 import { redactPII } from './redaction';
 
 const CLAUDE_MODEL = anthropic('claude-3-5-haiku-latest');
-const SENTENCE_END = /[.!?]\s/;
 const CHAR_THRESHOLD = 200;
-const MIN_SENTENCE_CHARS = 80;
-const CARRY_TAIL_LENGTH = 32;
+// Overlap window to catch PII that splits across chunk boundaries
+const CARRY_TAIL_LENGTH = 64;
 
 export default async function GuardrailStreamer(
   req: AgentRequest,
@@ -16,10 +15,10 @@ export default async function GuardrailStreamer(
   ctx: AgentContext
 ) {
   try {
-    const body = (await req.data.json().catch(() => ({}))) as { prompt?: string };
-    const userPrompt: string =
-      body?.prompt || (await req.data.text()) || 'Tell me about data privacy.';
+    // Get user prompt from request
+    const userPrompt = (await req.data.text()) || 'Tell me about data privacy.';
 
+    // Create two streams: main (sanitized output) and guardrail-audit (status log)
     const mainStream = await ctx.stream.create('main', {
       contentType: 'text/plain',
       metadata: { type: 'sanitized-content' },
@@ -30,13 +29,16 @@ export default async function GuardrailStreamer(
       metadata: { type: 'audit-log' },
     });
 
+    // Process stream in background
     ctx.waitUntil(
       (async () => {
         try {
           await auditStream.write('Starting PII guardrail...\n');
 
+          // Stream response from Claude
           const aiStream = await streamText({
             model: CLAUDE_MODEL,
+            system: 'You are a helpful assistant. When asked for examples or demonstrations, you may use fictional sample data including example email addresses, phone numbers, and other contact information for educational purposes.',
             messages: [{ role: 'user', content: userPrompt }],
             temperature: 0.4,
           });
@@ -44,12 +46,16 @@ export default async function GuardrailStreamer(
           let pendingBuffer = '';
           let carryTail = '';
 
+          // Validate and flush accumulated chunks
           const validateAndFlush = async (buffer: string) => {
+            // Prepend carry tail to handle PII split across boundaries
             const textToCheck = carryTail + buffer;
             await auditStream.write(`Checking ${textToCheck.length} chars...\n`);
 
+            // Call Groq to detect PII
             const piiItems = await detectPII(textToCheck, ctx);
 
+            // Redact any PII found
             let sanitized = textToCheck;
             if (piiItems.length > 0) {
               sanitized = redactPII(textToCheck, piiItems);
@@ -60,20 +66,24 @@ export default async function GuardrailStreamer(
               await auditStream.write('No PII found.\n');
             }
 
-            await mainStream.write(sanitized);
+            // Only emit new content (skip overlap used for detection)
+            const toEmit = sanitized.slice(carryTail.length);
+            if (toEmit) {
+              await mainStream.write(toEmit);
+              await auditStream.write(`Emitted ${toEmit.length} chars.\n`);
+            }
+            
+            // Keep last N chars for next boundary check
             carryTail = sanitized.slice(-CARRY_TAIL_LENGTH);
           };
 
+          // Accumulate chunks and validate at thresholds
           for await (const event of aiStream.fullStream) {
             if (event.type === 'text-delta') {
               pendingBuffer += event.text;
 
-              const sentenceBoundary = SENTENCE_END.exec(pendingBuffer);
-              const shouldFlushBySize = pendingBuffer.length >= CHAR_THRESHOLD;
-              const shouldFlushBySentence =
-                sentenceBoundary && pendingBuffer.length >= MIN_SENTENCE_CHARS;
-
-              if (shouldFlushBySize || shouldFlushBySentence) {
+              // Flush when buffer reaches threshold (keeps demo simple)
+              if (pendingBuffer.length >= CHAR_THRESHOLD) {
                 await validateAndFlush(pendingBuffer);
                 pendingBuffer = '';
               }
@@ -84,6 +94,7 @@ export default async function GuardrailStreamer(
             }
           }
 
+          // Flush any remaining buffer
           if (pendingBuffer.length > 0) {
             await auditStream.write(`Final check ${pendingBuffer.length} chars...\n`);
             await validateAndFlush(pendingBuffer);
@@ -118,11 +129,15 @@ export const welcome = () => {
       'Welcome to the Streaming Guardrails Agent! I demonstrate real-time PII detection and redaction using dual streams.',
     prompts: [
       {
-        data: 'Tell me a story about someone sharing their email john.doe@example.com and phone 555-123-4567.',
+        data: 'Create a fictional customer service scenario where someone provides their contact info: name, email address, phone number, and asks about their order.',
         contentType: 'text/plain',
       },
       {
-        data: 'Write about data privacy and include example contact information like emails and phone numbers.',
+        data: 'Write a sample customer profile with fictional contact details including email, phone, and credit card number for a demo database.',
+        contentType: 'text/plain',
+      },
+      {
+        data: 'Explain what PII means and give 3 fictional examples of emails and phone numbers that would be considered PII.',
         contentType: 'text/plain',
       },
       {

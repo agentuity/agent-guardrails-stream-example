@@ -32,6 +32,7 @@
     "@ai-sdk/anthropic": "^2.0.27",
     "@ai-sdk/groq": "^2.0.24",
     "ai": "^5.0.69",
+    "source-map-js": "^1.2.1",
     "zod": "^4.1.12"
   },
   "module": "index.ts"
