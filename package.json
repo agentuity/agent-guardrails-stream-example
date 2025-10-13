@@ -30,7 +30,9 @@
   "dependencies": {
     "@agentuity/sdk": "^0.0.154",
     "@ai-sdk/anthropic": "^2.0.27",
-    "ai": "^5.0.69"
+    "@ai-sdk/groq": "^2.0.24",
+    "ai": "^5.0.69",
+    "zod": "^4.1.12"
   },
   "module": "index.ts"
 }
