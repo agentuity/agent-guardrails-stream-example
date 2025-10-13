@@ -2,9 +2,11 @@
 
 ## Overview
 
-An Agentuity agent that demonstrates the **LLM-as-Judge/Guardrail** pattern using dual streams:
-- **Main stream**: PII-sanitized content from Claude
-- **Guardrail-audit stream**: Real-time status log showing PII detection and redaction activity
+An Agentuity agent that demonstrates the **LLM-as-Judge/Guardrail** pattern using dual streams for an internal company assistant:
+- **Main stream**: Confidential information-sanitized content from Claude
+- **Guardrail-audit stream**: Real-time status log showing confidential data detection and redaction activity
+
+**Use Case**: Internal employee assistant for SoleStep (shoe company) that helps with questions while protecting company secrets.
 
 ## Architecture
 
@@ -41,12 +43,13 @@ To handle PII split across chunk boundaries, keep last 32 chars of previous buff
 - **Content Generation**: `anthropic('claude-3-5-haiku-latest')`
 - **PII Detection**: `groq('llama-3.1-8b-instant')`
 
-### PII Types Detected
+### Confidential Information Types Detected
 
-- `email`
-- `phone`
-- `ssn`
-- `credit_card`
+- `financial` - Revenue, costs, margins, P&L figures
+- `product` - Unreleased product names, codenames, features, launch dates
+- `rnd` - R&D formulas, materials, prototypes, test results
+- `contact` - Internal employee emails, phone extensions
+- `strategy` - Strategic plans, pricing, market expansion, M&A
 
 ### Chunk Accumulation Strategy
 
@@ -57,13 +60,13 @@ Buffer text until either:
 ### Groq Detection Schema (Zod)
 
 ```typescript
-const PiiItemSchema = z.object({
-  type: z.enum(['email', 'phone', 'ssn', 'credit_card']),
+const ConfidentialItemSchema = z.object({
+  type: z.enum(['financial', 'product', 'rnd', 'contact', 'strategy']),
   value: z.string()
 });
 
-const PiiDetectionSchema = z.object({
-  pii: z.array(PiiItemSchema)
+const ConfidentialDetectionSchema = z.object({
+  items: z.array(ConfidentialItemSchema)
 });
 ```
 
@@ -71,12 +74,12 @@ const PiiDetectionSchema = z.object({
 
 **System:**
 ```
-You are a fast PII detector. Analyze the provided text and identify any personally identifiable information including emails, phone numbers, SSNs, and credit card numbers. Return the exact PII values found in the text.
+You are a fast confidential information detector. Extract confidential company information in these categories: financial (revenue, costs, margins), product (unreleased names/features), rnd (formulas, prototypes), contact (internal emails/phones), strategy (plans, pricing, M&A). Return exact spans verbatim with the correct type. If none, return empty list.
 ```
 
 **User:**
 ```
-Analyze this text for PII:
+Analyze this text for confidential items:
 
 {buffered_text}
 ```

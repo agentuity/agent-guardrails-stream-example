@@ -1,8 +1,8 @@
 import type { AgentContext, AgentRequest, AgentResponse } from '@agentuity/sdk';
 import { anthropic } from '@ai-sdk/anthropic';
 import { streamText } from 'ai';
-import { detectPII } from './pii-detection';
-import { redactPII } from './redaction';
+import { detectConfidential } from './confidential-detection';
+import { redactConfidential } from './redaction';
 
 const CLAUDE_MODEL = anthropic('claude-3-5-haiku-latest');
 const CHAR_THRESHOLD = 200;
@@ -33,12 +33,12 @@ export default async function GuardrailStreamer(
     ctx.waitUntil(
       (async () => {
         try {
-          await auditStream.write('Starting PII guardrail...\n');
+          await auditStream.write('Starting confidentiality guardrail...\n');
 
           // Stream response from Claude
           const aiStream = await streamText({
             model: CLAUDE_MODEL,
-            system: 'You are a helpful assistant. When asked for examples or demonstrations, you may use fictional sample data including example email addresses, phone numbers, and other contact information for educational purposes.',
+            system: 'You are an internal company assistant for SoleStep, a shoe company. You help employees with questions and tasks. When providing information, you may include realistic company data such as financial figures, product codenames, R&D details, employee contacts, and strategic plans for demonstration purposes.',
             messages: [{ role: 'user', content: userPrompt }],
             temperature: 0.4,
           });
@@ -52,18 +52,18 @@ export default async function GuardrailStreamer(
             const textToCheck = carryTail + buffer;
             await auditStream.write(`Checking ${textToCheck.length} chars...\n`);
 
-            // Call Groq to detect PII
-            const piiItems = await detectPII(textToCheck, ctx);
+            // Call Groq to detect confidential information
+            const confItems = await detectConfidential(textToCheck, ctx);
 
-            // Redact any PII found
+            // Redact any confidential info found
             let sanitized = textToCheck;
-            if (piiItems.length > 0) {
-              sanitized = redactPII(textToCheck, piiItems);
+            if (confItems.length > 0) {
+              sanitized = redactConfidential(textToCheck, confItems);
               await auditStream.write(
-                `Found ${piiItems.length} PII item(s): ${piiItems.map((p) => p.type).join(', ')}\n`
+                `Found ${confItems.length} confidential item(s): ${confItems.map((c) => c.type).join(', ')}\n`
               );
             } else {
-              await auditStream.write('No PII found.\n');
+              await auditStream.write('No confidential info found.\n');
             }
 
             // Only emit new content (skip overlap used for detection)
@@ -126,22 +126,22 @@ export default async function GuardrailStreamer(
 export const welcome = () => {
   return {
     welcome:
-      'Welcome to the Streaming Guardrails Agent! I demonstrate real-time PII detection and redaction using dual streams.',
+      'Welcome to the SoleStep Internal Assistant! I help employees with company information while protecting confidential data using streaming guardrails.',
     prompts: [
       {
-        data: 'Create a fictional customer service scenario where someone provides their contact info: name, email address, phone number, and asks about their order.',
+        data: 'Draft an internal memo summarizing our Q3 performance: revenue was $127M with 52% gross margin, unit costs reduced by 7%. Also mention that Project Zephyr launches in October.',
         contentType: 'text/plain',
       },
       {
-        data: 'Write a sample customer profile with fictional contact details including email, phone, and credit card number for a demo database.',
+        data: 'Write a product brief for our new shoe: Project Zephyr uses the AeroWeave upper material and FlexAir+ midsole. The R&D team developed a new foam compound: EVA 60%, TPU 28%, aerogel 12%.',
         contentType: 'text/plain',
       },
       {
-        data: 'Explain what PII means and give 3 fictional examples of emails and phone numbers that would be considered PII.',
+        data: 'Share the contact info for our Growth team: Sarah Chen (sarah.chen@solestep.internal, ext 4521) and the strategic plan to enter EU markets in Q1 with a €129 price point.',
         contentType: 'text/plain',
       },
       {
-        data: 'Explain how neural networks work.',
+        data: 'Explain how product development cycles typically work in the footwear industry.',
         contentType: 'text/plain',
       },
     ],
