@@ -16,7 +16,7 @@ export default async function GuardrailStreamer(
 ) {
   try {
     // Get user prompt from request
-    const userPrompt = (await req.data.text()) || 'Tell me about data privacy.';
+    const userPrompt = await req.data.text();
 
     // Create two streams: main (sanitized output) and guardrail-audit (status log)
     const mainStream = await ctx.stream.create('main', {
@@ -29,7 +29,6 @@ export default async function GuardrailStreamer(
       metadata: { type: 'audit-log' },
     });
 
-    // Process stream in background
     ctx.waitUntil(
       (async () => {
         try {
@@ -46,13 +45,12 @@ export default async function GuardrailStreamer(
           let pendingBuffer = '';
           let carryTail = '';
 
-          // Validate and flush accumulated chunks
+          // Validate then flush accumulated chunks
           const validateAndFlush = async (buffer: string) => {
-            // Prepend carry tail to handle PII split across boundaries
             const textToCheck = carryTail + buffer;
             await auditStream.write(`Checking ${textToCheck.length} chars...\n`);
 
-            // Call Groq to detect confidential information
+            // Check / detect confidential information
             const confItems = await detectConfidential(textToCheck, ctx);
 
             // Redact any confidential info found
@@ -82,7 +80,7 @@ export default async function GuardrailStreamer(
             if (event.type === 'text-delta') {
               pendingBuffer += event.text;
 
-              // Flush when buffer reaches threshold (keeps demo simple)
+              // Flush when buffer reaches threshold (keeps this demo simple)
               if (pendingBuffer.length >= CHAR_THRESHOLD) {
                 await validateAndFlush(pendingBuffer);
                 pendingBuffer = '';
@@ -105,13 +103,8 @@ export default async function GuardrailStreamer(
           await auditStream.close();
         } catch (error) {
           ctx.logger.error('Streaming error: %o', error);
-          await auditStream.write('Error occurred; closing streams.\n');
-          try {
-            await mainStream.close();
-          } catch {}
-          try {
-            await auditStream.close();
-          } catch {}
+					await mainStream.close();
+          await auditStream.close()
         }
       })()
     );

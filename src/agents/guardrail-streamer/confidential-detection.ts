@@ -14,7 +14,7 @@ const ConfidentialDetectionSchema = z.object({
 
 export type ConfidentialItem = z.infer<typeof ConfidentialItemSchema>;
 
-// Use a Groq model that supports structured outputs
+// Use Groq for speeeeeeed
 const GROQ_MODEL = groq('openai/gpt-oss-20b');
 
 export async function detectConfidential(

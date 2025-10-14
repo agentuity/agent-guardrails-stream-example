@@ -14,7 +14,7 @@ export function redactConfidential(
 ): string {
   if (!items?.length) return text;
 
-  // Sort by length (longest first) to avoid partial overlaps
+  // Sort by length because of potential overlaps
   const sorted = [...items].sort((a, b) => b.value.length - a.value.length);
 
   let redactedText = text;
