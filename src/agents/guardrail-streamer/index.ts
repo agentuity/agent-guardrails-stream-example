@@ -57,9 +57,16 @@ export default async function GuardrailStreamer(
             let sanitized = textToCheck;
             if (confItems.length > 0) {
               sanitized = redactConfidential(textToCheck, confItems);
+							
+							// Write the redacted information to the audit stream for review later
               await auditStream.write(
-                `Found ${confItems.length} confidential item(s): ${confItems.map((c) => c.type).join(', ')}\n`
+                `Found ${confItems.length} confidential item(s):\n`
               );
+              for (const item of confItems) {
+                await auditStream.write(
+                  `  - ${item.type}: "${item.value}"\n`
+                );
+              }
             } else {
               await auditStream.write('No confidential info found.\n');
             }
@@ -71,8 +78,9 @@ export default async function GuardrailStreamer(
               await auditStream.write(`Emitted ${toEmit.length} chars.\n`);
             }
             
-            // Keep last N chars for next boundary check
-            carryTail = sanitized.slice(-CARRY_TAIL_LENGTH);
+            // Keep last N chars from ORIGINAL text for next boundary check
+            // (not sanitized, to avoid detecting our own redaction markers)
+            carryTail = textToCheck.slice(-CARRY_TAIL_LENGTH);
           };
 
           // Accumulate chunks and validate at thresholds
